@@ -47,6 +47,7 @@ enum {
 };
 
 namespace zmq {
+
   class Socket;
 
   class Context : ObjectWrap {
@@ -391,20 +392,22 @@ namespace zmq {
 
     // FIXME: How to handle ZMQ_FD on Windows?
     switch (option) {
-      case ZMQ_HWM:
+      case 1:
+      case ZMQ_SNDHWM:
+      case ZMQ_RCVHWM:
       case ZMQ_AFFINITY:
-      case ZMQ_SNDBUF:
-      case ZMQ_RCVBUF:
       case ZMQ_RCVMORE:
         return socket->GetSockOpt<uint64_t>(option);
-      case ZMQ_SWAP:
+      case 3:
       case ZMQ_RATE:
       case ZMQ_RECOVERY_IVL:
-      case ZMQ_MCAST_LOOP:
+      case 10:
         return socket->GetSockOpt<int64_t>(option);
       case ZMQ_IDENTITY:
         return socket->GetSockOpt<char*>(option);
       case ZMQ_EVENTS:
+      case ZMQ_SNDBUF:
+      case ZMQ_RCVBUF:
         return socket->GetSockOpt<uint32_t>(option);
       case ZMQ_FD:
       case ZMQ_TYPE:
@@ -434,15 +437,15 @@ namespace zmq {
     GET_SOCKET(args);
 
     switch (option) {
-      case ZMQ_HWM:
+      case 1:
       case ZMQ_AFFINITY:
       case ZMQ_SNDBUF:
       case ZMQ_RCVBUF:
         return socket->SetSockOpt<uint64_t>(option, args[1]);
-      case ZMQ_SWAP:
+      case 3:
       case ZMQ_RATE:
       case ZMQ_RECOVERY_IVL:
-      case ZMQ_MCAST_LOOP:
+      case 10:
         return socket->SetSockOpt<int64_t>(option, args[1]);
       case ZMQ_IDENTITY:
       case ZMQ_SUBSCRIBE:
@@ -451,6 +454,8 @@ namespace zmq {
       case ZMQ_LINGER:
       case ZMQ_RECONNECT_IVL:
       case ZMQ_BACKLOG:
+      case ZMQ_SNDHWM:
+      case ZMQ_RCVHWM:
         return socket->SetSockOpt<int>(option, args[1]);
       case ZMQ_RCVMORE:
       case ZMQ_EVENTS:
@@ -657,8 +662,13 @@ namespace zmq {
     GET_SOCKET(args);
 
     IncomingMessage msg;
-    if (zmq_recv(socket->socket_, msg, flags) < 0)
-      return ThrowException(ExceptionFromError());        
+    #if ZMQ_VERSION_MAJOR == 2
+      if (zmq_recv(socket->socket_, msg, flags) < 0)
+        return ThrowException(ExceptionFromError());        
+    #else
+      if (zmq_recvmsg(socket->socket_, msg, flags) < 0)
+        return ThrowException(ExceptionFromError());        
+    #endif
     return scope.Close(msg.GetBuffer());
   }
 
@@ -770,8 +780,13 @@ namespace zmq {
     const char * dat = Buffer::Data(buf);
     std::copy(dat, dat + len, cp);
 
-    if (zmq_send(socket->socket_, &msg, flags) < 0)
-      return ThrowException(ExceptionFromError());
+    #if ZMQ_VERSION_MAJOR == 2
+      if (zmq_send(socket->socket_, &msg, flags) < 0)
+        return ThrowException(ExceptionFromError());
+    #else
+      if (zmq_sendmsg(socket->socket_, &msg, flags) < 0)
+        return ThrowException(ExceptionFromError());
+    #endif
 #endif // zero copy / copying version
 
     return Undefined();
@@ -840,15 +855,22 @@ namespace zmq {
     NODE_DEFINE_CONSTANT(target, ZMQ_PULL);
     NODE_DEFINE_CONSTANT(target, ZMQ_PAIR);
 
+    #if ZMQ_VERSION_MAJOR == 2
     NODE_DEFINE_CONSTANT(target, ZMQ_HWM);
     NODE_DEFINE_CONSTANT(target, ZMQ_SWAP);
+    #else
+    NODE_DEFINE_CONSTANT(target, ZMQ_SNDHWM);
+    NODE_DEFINE_CONSTANT(target, ZMQ_RCVHWM);
+    #endif
     NODE_DEFINE_CONSTANT(target, ZMQ_AFFINITY);
     NODE_DEFINE_CONSTANT(target, ZMQ_IDENTITY);
     NODE_DEFINE_CONSTANT(target, ZMQ_SUBSCRIBE);
     NODE_DEFINE_CONSTANT(target, ZMQ_UNSUBSCRIBE);
     NODE_DEFINE_CONSTANT(target, ZMQ_RATE);
     NODE_DEFINE_CONSTANT(target, ZMQ_RECOVERY_IVL);
+    #if ZMQ_VERSION_MAJOR == 2
     NODE_DEFINE_CONSTANT(target, ZMQ_MCAST_LOOP);
+    #endif
     NODE_DEFINE_CONSTANT(target, ZMQ_SNDBUF);
     NODE_DEFINE_CONSTANT(target, ZMQ_RCVBUF);
     NODE_DEFINE_CONSTANT(target, ZMQ_RCVMORE);
@@ -864,7 +886,9 @@ namespace zmq {
     NODE_DEFINE_CONSTANT(target, ZMQ_POLLERR);
 
     NODE_DEFINE_CONSTANT(target, ZMQ_SNDMORE);
+    #if ZMQ_VERSION_MAJOR == 2
     NODE_DEFINE_CONSTANT(target, ZMQ_NOBLOCK);
+    #endif
 
     NODE_DEFINE_CONSTANT(target, STATE_READY);
     NODE_DEFINE_CONSTANT(target, STATE_BUSY);
